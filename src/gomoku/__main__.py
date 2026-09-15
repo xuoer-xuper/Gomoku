@@ -1,4 +1,8 @@
-"""Command-line entry: python -m gomoku {server|client}."""
+"""Command-line entry.
+
+Default (no subcommand) opens the start screen. Creating a room makes
+the current player the host; guests join with the room code.
+"""
 
 from __future__ import annotations
 
@@ -36,16 +40,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"gomoku {__version__}",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=False)
 
-    server = sub.add_parser("server", help="启动房主对局服务")
+    server = sub.add_parser("server", help="仅启动对局服务（高级）")
     server.add_argument("--host", default="0.0.0.0")
     server.add_argument("--port", type=int, default=DEFAULT_PORT)
 
-    client = sub.add_parser("client", help="启动棋盘客户端")
+    client = sub.add_parser("client", help="仅启动棋盘客户端（高级）")
     client.add_argument("--host", default=DEFAULT_HOST)
     client.add_argument("--port", type=int, default=DEFAULT_PORT)
-    client.add_argument("--name", default="Player")
+    client.add_argument("--name", default="玩家")
     return parser
 
 
@@ -53,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
     _configure_stdio()
     _configure_logging()
     args = build_parser().parse_args(argv)
+    if args.command is None:
+        from gomoku.presentation.lobby import run_lobby
+
+        return run_lobby()
     if args.command == "server":
         from gomoku.communication.server import run_server
 
