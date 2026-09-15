@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from gomoku.data.game_state import GameState, GameStatus
 from gomoku.data.position import Position
 from gomoku.data.stone import Stone
-from gomoku.exceptions import GameNotActiveError, NotYourTurnError
+from gomoku.exceptions import (
+    CannotUndoError,
+    GameNotActiveError,
+    NotYourTurnError,
+)
 from gomoku.service.referee import Referee
 
 
@@ -51,7 +55,8 @@ class GameService:
         self._referee.validate_move(state.board, position)
         state.board.place(position, stone)
         state.last_move = position
-        state.move_count += 1
+        state.history.append(position)
+        state.move_count = len(state.history)
 
         winner = self._referee.winner_from(state.board, position)
         if winner is not None:
@@ -89,3 +94,27 @@ class GameService:
             is_finished=False,
             is_draw=False,
         )
+
+    def undo_last(self, state: GameState) -> MoveResult:
+        """Revert the latest stone and restore that player's turn."""
+        if not state.history:
+            raise CannotUndoError("没有可悔的棋")
+        position = state.history.pop()
+        stone = state.board.get(position)
+        state.board.clear(position)
+        state.move_count = len(state.history)
+        state.last_move = state.history[-1] if state.history else None
+        state.status = GameStatus.PLAYING
+        state.winner = None
+        state.current_turn = stone
+        return MoveResult(
+            position=position,
+            stone=stone,
+            next_turn=stone,
+            winner=None,
+            is_finished=False,
+            is_draw=False,
+        )
+
+    def restart(self, board_size: int) -> GameState:
+        return GameState.new(board_size)

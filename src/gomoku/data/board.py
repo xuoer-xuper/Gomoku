@@ -45,6 +45,12 @@ class Board:
             raise IndexError(f"position out of bounds: {position}")
         self._cells[position.row][position.col] = stone
 
+    def clear(self, position: Position) -> None:
+        """Remove a stone without changing other cells."""
+        if not self.in_bounds(position):
+            raise IndexError(f"position out of bounds: {position}")
+        self._cells[position.row][position.col] = Stone.EMPTY
+
     def is_full(self) -> bool:
         return all(
             cell is not Stone.EMPTY

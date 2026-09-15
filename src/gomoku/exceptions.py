@@ -19,3 +19,7 @@ class GameNotActiveError(GomokuError):
 
 class ProtocolError(GomokuError):
     """Raised when a network payload cannot be decoded."""
+
+
+class CannotUndoError(GomokuError):
+    """Raised when there is no move to revert."""
