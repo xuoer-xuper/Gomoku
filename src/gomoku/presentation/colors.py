@@ -1,0 +1,18 @@
+"""Palette used by the Pygame board."""
+
+BG = (46, 32, 20)
+WOOD = (214, 176, 102)
+WOOD_EDGE = (126, 82, 38)
+GRID = (70, 46, 24)
+HUD_BG = (34, 24, 16)
+TEXT = (245, 236, 214)
+MUTED = (196, 176, 148)
+ACCENT = (232, 184, 92)
+BLACK_STONE = (28, 28, 28)
+WHITE_STONE = (242, 240, 235)
+STONE_EDGE = (18, 14, 10)
+HIGHLIGHT = (255, 255, 255)
+LAST_MOVE = (196, 48, 42)
+WIN = (86, 186, 110)
+LOSE = (214, 86, 72)
+STAR = (52, 34, 18)
