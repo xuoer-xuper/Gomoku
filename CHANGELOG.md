@@ -7,6 +7,19 @@
 
 暂无。
 
+## [0.2.0] - 2026-09-15
+
+### 新增
+
+- 单窗口桌面界面：大厅与棋盘一体，侧栏聊天
+- 文字对话、悔棋（需对方同意）、再战（需对方同意）
+- `build_exe.bat` 打包无需安装的 `Gomoku.exe`
+
+### 变更
+
+- 展现层改为 Tkinter，默认不再依赖 Pygame
+- 创建房间者即房主的流程保持不变，界面重做
+
 ## [0.1.1] - 2026-09-15
 
 ### 新增
@@ -31,6 +44,7 @@
 - 局域网双人联机：一台电脑启动 `gomoku server`，两名玩家启动客户端
 - 产品说明、功能模块图、系统架构图与通讯协议文档
 
-[Unreleased]: https://github.com/xuoer-xuper/Gomoku/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/xuoer-xuper/Gomoku/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/xuoer-xuper/Gomoku/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/xuoer-xuper/Gomoku/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/xuoer-xuper/Gomoku/releases/tag/v0.1.0
