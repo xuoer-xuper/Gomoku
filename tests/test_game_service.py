@@ -59,6 +59,21 @@ def test_undo_restores_turn_and_clears_stone() -> None:
         service.undo_last(state)
 
 
+def test_undo_for_takes_back_own_move_after_reply() -> None:
+    service = GameService()
+    state = service.create(15)
+    service.apply_move(state, Stone.BLACK, Position(7, 7))
+    service.apply_move(state, Stone.WHITE, Position(7, 8))
+    service.apply_move(state, Stone.BLACK, Position(8, 8))
+    result = service.undo_for(state, Stone.WHITE)
+    assert len(result.removed) == 2
+    assert result.next_turn is Stone.WHITE
+    assert state.current_turn is Stone.WHITE
+    assert state.board.is_empty(Position(8, 8))
+    assert state.board.is_empty(Position(7, 8))
+    assert not state.board.is_empty(Position(7, 7))
+
+
 def test_undo_after_win_resumes_match() -> None:
     service = GameService()
     state = service.create(15)

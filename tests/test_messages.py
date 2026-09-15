@@ -30,6 +30,12 @@ def test_move_message_from_result() -> None:
     assert message.position() == Position(7, 7)
 
 
+def test_rematch_rejected_roundtrip() -> None:
+    message = Message.rematch_rejected()
+    restored = Message.from_bytes(message.to_bytes())
+    assert restored.type == MessageType.REMATCH_REJECTED.value
+
+
 def test_invalid_json_raises() -> None:
     with pytest.raises(ProtocolError):
         Message.from_bytes(b"not-json\n")

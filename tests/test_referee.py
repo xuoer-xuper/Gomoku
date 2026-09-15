@@ -20,6 +20,8 @@ def test_horizontal_five_wins() -> None:
     cells = [(7, 3), (7, 4), (7, 5), (7, 6), (7, 7)]
     _line(board, cells, Stone.BLACK)
     assert referee.winner_from(board, Position(7, 7)) is Stone.BLACK
+    line = referee.winning_line(board, Position(7, 7))
+    assert [(item.row, item.col) for item in line] == cells
 
 
 def test_vertical_five_wins() -> None:

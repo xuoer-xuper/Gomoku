@@ -10,7 +10,14 @@ import uuid
 from gomoku.communication.discover import AnnounceProtocol
 from gomoku.communication.firewall import allow_inbound
 from gomoku.communication.messages import Message, MessageType
-from gomoku.config import BOARD_SIZE, DEFAULT_HOST, DEFAULT_PORT
+from gomoku.communication.settings import RoomSettings
+from gomoku.config import (
+    BOARD_SIZE,
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DISCOVERY_PORT,
+)
+from gomoku.data.game_state import GameStatus
 from gomoku.data.stone import Stone
 from gomoku.data.store import IGameStore, InMemoryGameStore
 from gomoku.exceptions import CannotUndoError, GomokuError, ProtocolError
@@ -18,6 +25,7 @@ from gomoku.service.game_service import GameService
 
 # Shared with the lobby so UDP discovery can advertise the room code.
 _ANNOUNCE: dict[str, object] = {"code": "", "port": 0}
+_HOST_SETTINGS = RoomSettings()
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +87,8 @@ class Room:
         self._board_size = board_size
         self._undo_from: ClientSession | None = None
         self._rematch_from: ClientSession | None = None
+        self._settings = _HOST_SETTINGS
+        self._timer: asyncio.Task[None] | None = None
         self._store.put(self.id, service.create(board_size))
         black.color = Stone.BLACK
         white.color = Stone.WHITE
@@ -91,10 +101,22 @@ class Room:
             raise RuntimeError("room state missing")
         size = state.board.size
         await self.black.send(
-            Message.game_start(Stone.BLACK, self.white.name, size)
+            Message.game_start(
+                Stone.BLACK,
+                self.white.name,
+                size,
+                self._settings.allow_undo,
+                self._settings.think_seconds,
+            )
         )
         await self.white.send(
-            Message.game_start(Stone.WHITE, self.black.name, size)
+            Message.game_start(
+                Stone.WHITE,
+                self.black.name,
+                size,
+                self._settings.allow_undo,
+                self._settings.think_seconds,
+            )
         )
         logger.info(
             "room %s started: %s (black) vs %s (white)",
@@ -102,6 +124,7 @@ class Room:
             self.black.name,
             self.white.name,
         )
+        self._arm_timer()
 
     def other(self, session: ClientSession) -> ClientSession:
         return self.white if session is self.black else self.black
@@ -138,9 +161,12 @@ class Room:
             await self.black.send(move_msg)
             await self.white.send(move_msg)
             if result.is_finished:
+                self._cancel_timer()
                 over = Message.game_over(result)
                 await self.black.send(over)
                 await self.white.send(over)
+            else:
+                self._arm_timer()
             self._undo_from = None
             self._rematch_from = None
 
@@ -158,9 +184,15 @@ class Room:
 
     async def handle_undo_request(self, session: ClientSession) -> None:
         async with self._lock:
+            if not self._settings.allow_undo:
+                await session.send(Message.invalid("本房间不允许悔棋"))
+                return
             state = self._store.get(self.id)
             if state is None or not state.history:
                 await session.send(Message.invalid("没有可悔的棋"))
+                return
+            if session.color is None:
+                await session.send(Message.invalid("尚未分配执子颜色"))
                 return
             if self._undo_from is session:
                 await session.send(Message.invalid("已发送悔棋请求"))
@@ -195,8 +227,11 @@ class Room:
             if state is None:
                 await session.send(Message.error("对局不存在"))
                 return
+            if requester.color is None:
+                await session.send(Message.invalid("无法悔棋"))
+                return
             try:
-                result = self._service.undo_last(state)
+                result = self._service.undo_for(state, requester.color)
             except CannotUndoError as exc:
                 await session.send(Message.invalid(str(exc)))
                 return
@@ -204,9 +239,14 @@ class Room:
             undo_msg = Message.from_undo(result)
             await self.black.send(undo_msg)
             await self.white.send(undo_msg)
+            self._arm_timer()
 
     async def handle_rematch_request(self, session: ClientSession) -> None:
         async with self._lock:
+            state = self._store.get(self.id)
+            if state is None or state.status is not GameStatus.FINISHED:
+                await session.send(Message.invalid("对局尚未结束，不能再战"))
+                return
             if self._rematch_from is session:
                 await session.send(Message.invalid("已发送再战请求"))
                 return
@@ -232,6 +272,7 @@ class Room:
             self._rematch_from = None
             self._undo_from = None
             if not accepted:
+                await requester.send(Message.rematch_rejected())
                 await requester.send(
                     Message.chat("系统", "对方拒绝再战", True)
                 )
@@ -243,10 +284,70 @@ class Room:
             self._store.put(self.id, state)
             await self.start()
 
+    async def handle_resign(self, session: ClientSession) -> None:
+        async with self._lock:
+            await self._end_by(session, "resign")
+
     async def notify_leave(self, session: ClientSession) -> None:
-        await self.other(session).send(Message.opponent_left())
+        async with self._lock:
+            state = self._store.get(self.id)
+            playing = (
+                state is not None
+                and state.status is GameStatus.PLAYING
+                and session.color is not None
+            )
+            if playing:
+                await self._end_by(session, "left")
+            else:
+                try:
+                    await self.other(session).send(Message.opponent_left())
+                except OSError:
+                    pass
+
+    async def _end_by(self, session: ClientSession, reason: str) -> None:
+        state = self._store.get(self.id)
+        if state is None or session.color is None:
+            return
+        if state.status is not GameStatus.PLAYING:
+            return
+        winner = session.color.opponent()
+        result = self._service.finish(state, winner, reason)
+        self._store.put(self.id, state)
+        self._cancel_timer()
+        over = Message.game_over(result)
+        await self.black.send(over)
+        await self.white.send(over)
+
+    def _arm_timer(self) -> None:
+        self._cancel_timer()
+        seconds = self._settings.think_seconds
+        if seconds <= 0:
+            return
+        self._timer = asyncio.create_task(self._on_timeout(seconds))
+
+    def _cancel_timer(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+
+    async def _on_timeout(self, seconds: int) -> None:
+        try:
+            await asyncio.sleep(seconds)
+        except asyncio.CancelledError:
+            return
+        async with self._lock:
+            state = self._store.get(self.id)
+            if state is None or state.status is not GameStatus.PLAYING:
+                return
+            loser = (
+                self.black
+                if state.current_turn is Stone.BLACK
+                else self.white
+            )
+            await self._end_by(loser, "timeout")
 
     def dispose(self) -> None:
+        self._cancel_timer()
         self._store.delete(self.id)
         self.black.room = None
         self.white.room = None
@@ -334,6 +435,9 @@ class SessionManager:
         if message.type == MessageType.REMATCH_REPLY.value:
             await room.handle_rematch_reply(session, message)
             return
+        if message.type == MessageType.RESIGN.value:
+            await room.handle_resign(session)
+            return
         await session.send(Message.error(f"未知消息类型: {message.type}"))
 
     async def _on_join(
@@ -417,12 +521,16 @@ def set_host_room_code(code: str) -> None:
 def start_embedded_server(
     host: str = "0.0.0.0",
     port: int = DEFAULT_PORT,
+    settings: RoomSettings | None = None,
 ) -> int:
     """Run the match server in a daemon thread. Return the bound port.
 
     The player who clicks「创建房间」owns this process: they are the host,
     and no extra server window is required.
     """
+    global _HOST_SETTINGS
+    if settings is not None:
+        _HOST_SETTINGS = settings
     allow_inbound(port)
     last_error: OSError | None = None
     for candidate in range(port, port + 16):
@@ -500,10 +608,14 @@ async def _start_announcer(
     try:
         transport, _protocol = await loop.create_datagram_endpoint(
             lambda: AnnounceProtocol(_ANNOUNCE),
-            local_addr=(udp_host, port),
+            local_addr=(udp_host, DISCOVERY_PORT),
             allow_broadcast=True,
         )
-        logger.info("room announcer listening on UDP %s:%s", udp_host, port)
+        logger.info(
+            "room announcer listening on UDP %s:%s",
+            udp_host,
+            DISCOVERY_PORT,
+        )
         return transport
     except OSError as exc:
         logger.info("room announcer unavailable: %s", exc)

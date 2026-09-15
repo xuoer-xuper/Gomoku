@@ -23,6 +23,15 @@ class MoveResult:
     winner: Stone | None
     is_finished: bool
     is_draw: bool
+    reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class UndoResult:
+    """Stones removed to take back ``stone``'s last move."""
+
+    removed: tuple[tuple[Position, Stone], ...]
+    next_turn: Stone
 
 
 class GameService:
@@ -97,24 +106,79 @@ class GameService:
 
     def undo_last(self, state: GameState) -> MoveResult:
         """Revert the latest stone and restore that player's turn."""
+        result = self.undo_for(state, self._last_stone(state))
+        position, stone = result.removed[0]
+        return MoveResult(
+            position=position,
+            stone=stone,
+            next_turn=result.next_turn,
+            winner=None,
+            is_finished=False,
+            is_draw=False,
+        )
+
+    def undo_for(self, state: GameState, stone: Stone) -> UndoResult:
+        """Take back ``stone``'s last move (and the reply after it, if any).
+
+        White to move after Black just answered: undoing White removes both
+        stones so it is White's turn again.
+        """
         if not state.history:
             raise CannotUndoError("没有可悔的棋")
-        position = state.history.pop()
-        stone = state.board.get(position)
-        state.board.clear(position)
+        if stone not in (Stone.BLACK, Stone.WHITE):
+            raise CannotUndoError("无效的执子颜色")
+        last_color = self._last_stone(state)
+        count = 1 if last_color is stone else 2
+        if len(state.history) < count:
+            raise CannotUndoError("还没有你的落子")
+        if count == 2 and self._stone_at(state, -2) is not stone:
+            raise CannotUndoError("还没有你的落子")
+        removed: list[tuple[Position, Stone]] = []
+        for _ in range(count):
+            position = state.history.pop()
+            color = state.board.get(position)
+            state.board.clear(position)
+            removed.append((position, color))
         state.move_count = len(state.history)
         state.last_move = state.history[-1] if state.history else None
         state.status = GameStatus.PLAYING
         state.winner = None
         state.current_turn = stone
+        return UndoResult(removed=tuple(removed), next_turn=stone)
+
+    def finish(
+        self,
+        state: GameState,
+        winner: Stone,
+        reason: str,
+    ) -> MoveResult:
+        """End the match by resign, timeout or disconnect."""
+        if state.status is not GameStatus.PLAYING:
+            raise GameNotActiveError("对局尚未开始或已经结束")
+        state.status = GameStatus.FINISHED
+        state.winner = winner
+        position = state.last_move or Position(0, 0)
+        stone = winner
         return MoveResult(
             position=position,
             stone=stone,
-            next_turn=stone,
-            winner=None,
-            is_finished=False,
+            next_turn=None,
+            winner=winner,
+            is_finished=True,
             is_draw=False,
+            reason=reason,
         )
+
+    def _last_stone(self, state: GameState) -> Stone:
+        return self._stone_at(state, -1)
+
+    def _stone_at(self, state: GameState, index: int) -> Stone:
+        if not state.history:
+            raise CannotUndoError("没有可悔的棋")
+        real = index if index >= 0 else len(state.history) + index
+        if real < 0 or real >= len(state.history):
+            raise CannotUndoError("没有可悔的棋")
+        return Stone.BLACK if real % 2 == 0 else Stone.WHITE
 
     def restart(self, board_size: int) -> GameState:
         return GameState.new(board_size)
