@@ -2,9 +2,7 @@
 
 Python 双人局域网联机五子棋。不依赖云主机：其中一名玩家在本机启动对局服务（房主），另一名玩家通过局域网 IP 连接即可对战。
 
-## 当前状态
-
-仓库刚完成本地 Git 初始化，功能代码尚未合入版本发布。开发在 `dev` 分支进行，稳定版本合并到 `main`。
+当前版本：**0.1.0**
 
 ## 联机方式
 
@@ -20,26 +18,53 @@ gomoku client
 - 客人使用房主的 IPv4 地址连接
 - 同一台电脑可开一个服务 + 两个客户端，连接 `127.0.0.1` 做本地自测
 
-## 技术栈（已锁定）
+## 技术栈
 
 | 分层 | 选型 |
 | --- | --- |
-| 展现层 | Pygame 绘制 15 路棋盘 |
+| 展现层 | Pygame（pygame-ce）绘制 15 路棋盘 |
 | 通讯层 | asyncio TCP + JSON 行协议 |
 | 服务层 | 自研规则引擎（落子合法性、连五判定、回合） |
 | 数据层 | 内存棋盘与对局快照，无数据库 |
 | 规则 | 15 路自由五子棋，连五即胜，黑先 |
 
-## Git 工作流
+## 安装与运行
 
-- 主分支 `main`，开发分支 `dev`
-- 版本号从 `0.1.0` 起按 `0.1.1` 递增
-- 提交信息遵循 Angular 规范，说明使用中文，例如：`feat(service): 实现连五胜负判定`
-
-## 本地运行（实现后）
+需要 Python 3.11+。展现层依赖 **pygame-ce**（与 `import pygame` 兼容；官方 pygame 暂无 3.14 轮子）。
 
 ```bash
 pip install -e ".[dev]"
+```
+
+房主（对局域网监听）：
+
+```bash
 python -m gomoku server --host 0.0.0.0 --port 8765
+```
+
+客户端：
+
+```bash
 python -m gomoku client --host 127.0.0.1 --port 8765 --name 玩家1
+python -m gomoku client --host 192.168.x.x --port 8765 --name 玩家2
+```
+
+操作：鼠标点击交叉点落子，ESC 退出。
+
+## 文档
+
+- [产品功能说明](docs/product.md)
+- [系统架构](docs/architecture.md)
+- [功能模块图](docs/modules.md)
+- [通讯协议](docs/protocol.md)
+- [更新日志](CHANGELOG.md)
+
+## Git 工作流
+
+- 主分支 `main`，开发分支 `dev`
+- 版本号从 `0.1.0` 递增；发布时在 `main` 打附注标签 `v0.1.0`
+- 提交信息遵循 Angular 规范，说明使用中文
+
+```bash
+pytest
 ```
