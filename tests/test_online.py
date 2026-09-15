@@ -8,7 +8,8 @@ import time
 
 from gomoku.communication.client import GameClient
 from gomoku.communication.messages import MessageType
-from gomoku.communication.server import serve
+from gomoku.communication.room_code import decode_endpoint, encode_endpoint
+from gomoku.communication.server import serve, start_embedded_server
 
 
 def _free_port() -> int:
@@ -66,6 +67,29 @@ def test_two_players_black_wins_horizontal() -> None:
         over_w = _wait(white, MessageType.GAME_OVER.value)
         assert over_b.payload["winner"] == "black"
         assert over_w.payload["reason"] == "five_in_a_row"
+    finally:
+        black.close()
+        white.close()
+
+
+def test_embedded_host_and_room_code() -> None:
+    port = start_embedded_server("127.0.0.1", _free_port())
+    code = encode_endpoint("127.0.0.1", port)
+    host, decoded_port = decode_endpoint(code)
+    assert host == "127.0.0.1"
+    assert decoded_port == port
+
+    black = GameClient()
+    white = GameClient()
+    try:
+        black.connect("127.0.0.1", port)
+        white.connect("127.0.0.1", port)
+        black.join("Host")
+        white.join("Guest")
+        start_b = _wait(black, MessageType.GAME_START.value)
+        start_w = _wait(white, MessageType.GAME_START.value)
+        assert start_b.payload["your_color"] == "black"
+        assert start_w.payload["your_color"] == "white"
     finally:
         black.close()
         white.close()
