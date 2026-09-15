@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import uuid
 
 from gomoku.communication.messages import Message, MessageType
@@ -281,3 +282,72 @@ def run_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
         asyncio.run(serve(host, port))
     except KeyboardInterrupt:
         logger.info("server stopped")
+
+
+def start_embedded_server(
+    host: str = "0.0.0.0",
+    port: int = DEFAULT_PORT,
+) -> int:
+    """Run the match server in a daemon thread. Return the bound port.
+
+    The player who clicks「创建房间」owns this process: they are the host,
+    and no extra server window is required.
+    """
+    last_error: OSError | None = None
+    for candidate in range(port, port + 16):
+        try:
+            return _spawn_server_thread(host, candidate)
+        except OSError as exc:
+            last_error = exc
+            continue
+    raise RuntimeError("无法启动房间服务，端口被占用") from last_error
+
+
+def _spawn_server_thread(host: str, port: int) -> int:
+    ready = threading.Event()
+    error: list[BaseException] = []
+    bound: list[int] = []
+
+    def _run() -> None:
+        try:
+            asyncio.run(_serve_and_signal(host, port, ready, bound))
+        except OSError as exc:
+            error.append(exc)
+            ready.set()
+        except Exception as exc:  # pragma: no cover - unexpected
+            error.append(exc)
+            ready.set()
+
+    thread = threading.Thread(
+        target=_run,
+        name="gomoku-host",
+        daemon=True,
+    )
+    thread.start()
+    if not ready.wait(timeout=5):
+        raise RuntimeError("房主服务启动超时")
+    if error:
+        raise error[0]
+    return bound[0]
+
+
+async def _serve_and_signal(
+    host: str,
+    port: int,
+    ready: threading.Event,
+    bound: list[int],
+) -> None:
+    manager = SessionManager()
+    server = await asyncio.start_server(
+        manager.handle_connection,
+        host,
+        port,
+    )
+    sockets = server.sockets or []
+    if not sockets:
+        raise OSError("server has no bound socket")
+    bound.append(int(sockets[0].getsockname()[1]))
+    logger.info("embedded host listening on %s", sockets[0].getsockname())
+    ready.set()
+    async with server:
+        await server.serve_forever()
