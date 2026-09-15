@@ -11,7 +11,7 @@ from gomoku.communication.messages import Message, MessageType
 from gomoku.config import BOARD_SIZE, DEFAULT_HOST, DEFAULT_PORT
 from gomoku.data.stone import Stone
 from gomoku.data.store import IGameStore, InMemoryGameStore
-from gomoku.exceptions import GomokuError, ProtocolError
+from gomoku.exceptions import CannotUndoError, GomokuError, ProtocolError
 from gomoku.service.game_service import GameService
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,9 @@ class Room:
         self._service = service
         self._store = store
         self._lock = asyncio.Lock()
+        self._board_size = board_size
+        self._undo_from: ClientSession | None = None
+        self._rematch_from: ClientSession | None = None
         self._store.put(self.id, service.create(board_size))
         black.color = Stone.BLACK
         white.color = Stone.WHITE
@@ -133,6 +136,107 @@ class Room:
                 over = Message.game_over(result)
                 await self.black.send(over)
                 await self.white.send(over)
+            self._undo_from = None
+            self._rematch_from = None
+
+    async def handle_chat(
+        self,
+        session: ClientSession,
+        message: Message,
+    ) -> None:
+        text = str(message.payload.get("text") or "").strip()[:80]
+        if not text:
+            return
+        outgoing = Message.chat(session.name, text)
+        await self.black.send(outgoing)
+        await self.white.send(outgoing)
+
+    async def handle_undo_request(self, session: ClientSession) -> None:
+        async with self._lock:
+            state = self._store.get(self.id)
+            if state is None or not state.history:
+                await session.send(Message.invalid("没有可悔的棋"))
+                return
+            if self._undo_from is session:
+                await session.send(Message.invalid("已发送悔棋请求"))
+                return
+            self._undo_from = session
+            await self.other(session).send(
+                Message.undo_request(session.name)
+            )
+            await session.send(
+                Message.chat("系统", "已向对方请求悔棋", True)
+            )
+
+    async def handle_undo_reply(
+        self,
+        session: ClientSession,
+        message: Message,
+    ) -> None:
+        async with self._lock:
+            requester = self._undo_from
+            if requester is None or requester is session:
+                await session.send(Message.invalid("没有待处理的悔棋"))
+                return
+            accepted = bool(message.payload.get("accepted"))
+            self._undo_from = None
+            if not accepted:
+                await requester.send(Message.undo_rejected())
+                await session.send(
+                    Message.chat("系统", "你拒绝了悔棋", True)
+                )
+                return
+            state = self._store.get(self.id)
+            if state is None:
+                await session.send(Message.error("对局不存在"))
+                return
+            try:
+                result = self._service.undo_last(state)
+            except CannotUndoError as exc:
+                await session.send(Message.invalid(str(exc)))
+                return
+            self._store.put(self.id, state)
+            undo_msg = Message.from_undo(result)
+            await self.black.send(undo_msg)
+            await self.white.send(undo_msg)
+
+    async def handle_rematch_request(self, session: ClientSession) -> None:
+        async with self._lock:
+            if self._rematch_from is session:
+                await session.send(Message.invalid("已发送再战请求"))
+                return
+            self._rematch_from = session
+            await self.other(session).send(
+                Message.rematch_request(session.name)
+            )
+            await session.send(
+                Message.chat("系统", "已向对方请求再战", True)
+            )
+
+    async def handle_rematch_reply(
+        self,
+        session: ClientSession,
+        message: Message,
+    ) -> None:
+        async with self._lock:
+            requester = self._rematch_from
+            if requester is None or requester is session:
+                await session.send(Message.invalid("没有待处理的再战"))
+                return
+            accepted = bool(message.payload.get("accepted"))
+            self._rematch_from = None
+            self._undo_from = None
+            if not accepted:
+                await requester.send(
+                    Message.chat("系统", "对方拒绝再战", True)
+                )
+                await session.send(
+                    Message.chat("系统", "你拒绝了再战", True)
+                )
+                return
+            state = self._service.restart(self._board_size)
+            self._store.put(self.id, state)
+            await self.start()
 
     async def notify_leave(self, session: ClientSession) -> None:
         await self.other(session).send(Message.opponent_left())
@@ -203,11 +307,27 @@ class SessionManager:
         if not session.joined:
             await session.send(Message.error("请先发送 join"))
             return
+        if session.room is None:
+            await session.send(Message.invalid("对局尚未开始"))
+            return
+        room = session.room
         if message.type == MessageType.PLACE.value:
-            if session.room is None:
-                await session.send(Message.invalid("对局尚未开始"))
-                return
-            await session.room.handle_place(session, message)
+            await room.handle_place(session, message)
+            return
+        if message.type == MessageType.CHAT.value:
+            await room.handle_chat(session, message)
+            return
+        if message.type == MessageType.UNDO_REQUEST.value:
+            await room.handle_undo_request(session)
+            return
+        if message.type == MessageType.UNDO_REPLY.value:
+            await room.handle_undo_reply(session, message)
+            return
+        if message.type == MessageType.REMATCH_REQUEST.value:
+            await room.handle_rematch_request(session)
+            return
+        if message.type == MessageType.REMATCH_REPLY.value:
+            await room.handle_rematch_reply(session, message)
             return
         await session.send(Message.error(f"未知消息类型: {message.type}"))
 

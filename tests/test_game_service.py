@@ -2,9 +2,14 @@
 
 import pytest
 
+from gomoku.data.game_state import GameStatus
 from gomoku.data.position import Position
 from gomoku.data.stone import Stone
-from gomoku.exceptions import GameNotActiveError, NotYourTurnError
+from gomoku.exceptions import (
+    CannotUndoError,
+    GameNotActiveError,
+    NotYourTurnError,
+)
 from gomoku.service.game_service import GameService
 from gomoku.service.referee import Referee
 
@@ -40,6 +45,33 @@ def test_win_finishes_match() -> None:
     assert state.is_draw is False
     with pytest.raises(GameNotActiveError):
         service.apply_move(state, Stone.WHITE, Position(0, 0))
+
+
+def test_undo_restores_turn_and_clears_stone() -> None:
+    service = GameService()
+    state = service.create(15)
+    service.apply_move(state, Stone.BLACK, Position(7, 7))
+    result = service.undo_last(state)
+    assert result.next_turn is Stone.BLACK
+    assert state.board.is_empty(Position(7, 7))
+    assert state.history == []
+    with pytest.raises(CannotUndoError):
+        service.undo_last(state)
+
+
+def test_undo_after_win_resumes_match() -> None:
+    service = GameService()
+    state = service.create(15)
+    black = [(7, 0), (7, 1), (7, 2), (7, 3), (7, 4)]
+    white = [(8, 0), (8, 1), (8, 2), (8, 3)]
+    for index in range(4):
+        service.apply_move(state, Stone.BLACK, Position(*black[index]))
+        service.apply_move(state, Stone.WHITE, Position(*white[index]))
+    service.apply_move(state, Stone.BLACK, Position(*black[4]))
+    service.undo_last(state)
+    assert state.status is GameStatus.PLAYING
+    assert state.winner is None
+    assert state.current_turn is Stone.BLACK
 
 
 def test_draw_when_board_full_without_winner() -> None:

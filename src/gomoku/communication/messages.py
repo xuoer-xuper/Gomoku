@@ -28,6 +28,13 @@ class MessageType(str, Enum):
     ERROR = "error"
     PING = "ping"
     PONG = "pong"
+    CHAT = "chat"
+    UNDO_REQUEST = "undo_request"
+    UNDO_REPLY = "undo_reply"
+    UNDO = "undo"
+    UNDO_REJECTED = "undo_rejected"
+    REMATCH_REQUEST = "rematch_request"
+    REMATCH_REPLY = "rematch_reply"
 
 
 class Message:
@@ -136,6 +143,50 @@ class Message:
     @classmethod
     def opponent_left(cls) -> Message:
         return cls(MessageType.OPPONENT_LEFT, {})
+
+    @classmethod
+    def chat(cls, name: str, text: str, system: bool = False) -> Message:
+        return cls(
+            MessageType.CHAT,
+            {"name": name, "text": text, "system": system},
+        )
+
+    @classmethod
+    def undo_request(cls, name: str) -> Message:
+        return cls(MessageType.UNDO_REQUEST, {"name": name})
+
+    @classmethod
+    def undo_reply(cls, accepted: bool) -> Message:
+        return cls(MessageType.UNDO_REPLY, {"accepted": accepted})
+
+    @classmethod
+    def from_undo(cls, result: MoveResult) -> Message:
+        return cls(
+            MessageType.UNDO,
+            {
+                "row": result.position.row,
+                "col": result.position.col,
+                "color": result.stone.code,
+                "next_turn": (
+                    result.next_turn.code if result.next_turn else None
+                ),
+            },
+        )
+
+    @classmethod
+    def undo_rejected(cls) -> Message:
+        return cls(MessageType.UNDO_REJECTED, {})
+
+    @classmethod
+    def rematch_request(cls, name: str) -> Message:
+        return cls(MessageType.REMATCH_REQUEST, {"name": name})
+
+    @classmethod
+    def rematch_reply(cls, accepted: bool) -> Message:
+        return cls(
+            MessageType.REMATCH_REPLY,
+            {"accepted": accepted},
+        )
 
     @classmethod
     def error(cls, message: str) -> Message:

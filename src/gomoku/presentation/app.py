@@ -7,10 +7,8 @@ import sys
 
 try:
     import pygame
-except ImportError as exc:  # pragma: no cover - runtime dependency
-    raise SystemExit(
-        "请先安装依赖: pip install pygame-ce"
-    ) from exc
+except ImportError:  # pragma: no cover - optional legacy UI
+    pygame = None  # type: ignore[assignment]
 
 from gomoku.communication.client import GameClient
 from gomoku.communication.messages import Message, MessageType
@@ -336,6 +334,8 @@ def run_client(
     room_code: str | None = None,
     is_host: bool = False,
 ) -> None:
+    if pygame is None:
+        raise SystemExit("请使用 python -m gomoku 启动桌面版")
     app = GameApp(
         host,
         port,

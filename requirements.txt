@@ -1,1 +1,2 @@
-pygame-ce>=2.5.3
+# 主程序仅使用 Python 标准库（tkinter）。
+# 打包 exe：pip install -e ".[dev]" 后运行 build_exe.bat

@@ -1,6 +1,6 @@
 """Mutable snapshot of a single match."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from gomoku.config import BOARD_SIZE
@@ -26,6 +26,7 @@ class GameState:
     winner: Stone | None = None
     last_move: Position | None = None
     move_count: int = 0
+    history: list[Position] = field(default_factory=list)
 
     @classmethod
     def new(cls, board_size: int = BOARD_SIZE) -> "GameState":
