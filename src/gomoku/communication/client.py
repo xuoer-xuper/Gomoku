@@ -7,7 +7,7 @@ import queue
 import socket
 import threading
 
-from gomoku.communication.messages import Message
+from gomoku.communication.messages import Message, MessageType
 from gomoku.config import ENCODING
 from gomoku.exceptions import ProtocolError
 
@@ -77,6 +77,21 @@ class GameClient:
 
     def place(self, row: int, col: int) -> None:
         self.send(Message.place(row, col))
+
+    def chat(self, text: str) -> None:
+        self.send(Message.chat("", text))
+
+    def request_undo(self) -> None:
+        self.send(Message(MessageType.UNDO_REQUEST, {}))
+
+    def reply_undo(self, accepted: bool) -> None:
+        self.send(Message.undo_reply(accepted))
+
+    def request_rematch(self) -> None:
+        self.send(Message(MessageType.REMATCH_REQUEST, {}))
+
+    def reply_rematch(self, accepted: bool) -> None:
+        self.send(Message.rematch_reply(accepted))
 
     def send(self, message: Message) -> None:
         if self._transport is None:
