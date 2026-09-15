@@ -8,7 +8,9 @@ import sys
 try:
     import pygame
 except ImportError as exc:  # pragma: no cover - runtime dependency
-    raise SystemExit("请先安装依赖: pip install pygame") from exc
+    raise SystemExit(
+        "请先安装依赖: pip install pygame-ce"
+    ) from exc
 
 from gomoku.communication.client import GameClient
 from gomoku.communication.messages import Message, MessageType
@@ -52,10 +54,19 @@ def _load_font(size: int, bold: bool = False) -> pygame.font.Font:
 class GameApp:
     """Presentation facade. Talks to GameClient, never to GameService."""
 
-    def __init__(self, host: str, port: int, name: str) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        name: str,
+        room_code: str | None = None,
+        is_host: bool = False,
+    ) -> None:
         self._host = host
         self._port = port
         self._name = name
+        self._room_code = room_code
+        self._is_host = is_host
         self._client = GameClient()
         self._board = Board(BOARD_SIZE)
         self._my_color: Stone | None = None
@@ -64,7 +75,7 @@ class GameApp:
         self._hover: Position | None = None
         self._opponent_name = "等待中"
         self._status = "正在连接…"
-        self._detail = f"{host}:{port}"
+        self._detail = self._waiting_detail()
         self._hint = "ESC 退出"
         self._status_color = colors.ACCENT
         self._finished = False
@@ -74,12 +85,27 @@ class GameApp:
     def connect(self) -> None:
         self._client.connect(self._host, self._port)
         self._client.join(self._name)
-        self._status = "已连接，等待对手加入"
+        self._status = (
+            f"房间 {self._room_code}" if self._room_code else "已连接"
+        )
+        if self._is_host:
+            self._hint = "房间号已复制，发给同一 Wi-Fi 的朋友即可加入"
+        else:
+            self._hint = "正在进入房间…"
         self._status_color = colors.ACCENT
+
+    def _waiting_detail(self) -> str:
+        if self._room_code:
+            role = "房主" if self._is_host else "客人"
+            return f"{role}  {self._name}  ·  房间 {self._room_code}"
+        return f"{self._name}  {self._host}:{self._port}"
 
     def run(self) -> None:
         pygame.init()
-        pygame.display.set_caption("联机五子棋")
+        caption = "联机五子棋"
+        if self._room_code:
+            caption = f"联机五子棋  {self._room_code}"
+        pygame.display.set_caption(caption)
         board_span = (BOARD_SIZE - 1) * CELL_SIZE
         width = WINDOW_PADDING * 2 + BOARD_MARGIN * 2 + board_span
         height = (
@@ -191,8 +217,12 @@ class GameApp:
         self._detail = f"{self._name}  #{player_id}"
 
     def _on_waiting(self, _message: Message) -> None:
-        self._status = "等待对手加入"
-        self._hint = "请让第二位玩家连接同一房主"
+        if self._room_code:
+            self._status = f"房间 {self._room_code}  ·  等待对手"
+            self._hint = "把房间号发给同一 Wi-Fi 的朋友"
+        else:
+            self._status = "等待对手加入"
+            self._hint = "等待第二位玩家加入"
 
     def _on_game_start(self, message: Message) -> None:
         color = Stone.from_code(str(message.payload["your_color"]))
@@ -303,8 +333,16 @@ def run_client(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     name: str = "Player",
+    room_code: str | None = None,
+    is_host: bool = False,
 ) -> None:
-    app = GameApp(host, port, name)
+    app = GameApp(
+        host,
+        port,
+        name,
+        room_code=room_code,
+        is_host=is_host,
+    )
     try:
         app.connect()
     except OSError as exc:
