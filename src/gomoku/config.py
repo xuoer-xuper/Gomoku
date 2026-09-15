@@ -1,0 +1,14 @@
+"""Shared configuration constants for all layers."""
+
+BOARD_SIZE = 15
+WIN_LENGTH = 5
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8765
+ENCODING = "utf-8"
+
+CELL_SIZE = 42
+BOARD_MARGIN = 48
+WINDOW_PADDING = 16
+HUD_HEIGHT = 88
+FOOTER_HEIGHT = 42
+FPS = 60
