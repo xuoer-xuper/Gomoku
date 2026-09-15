@@ -7,12 +7,17 @@ import logging
 import threading
 import uuid
 
+from gomoku.communication.discover import AnnounceProtocol
+from gomoku.communication.firewall import allow_inbound
 from gomoku.communication.messages import Message, MessageType
 from gomoku.config import BOARD_SIZE, DEFAULT_HOST, DEFAULT_PORT
 from gomoku.data.stone import Stone
 from gomoku.data.store import IGameStore, InMemoryGameStore
 from gomoku.exceptions import CannotUndoError, GomokuError, ProtocolError
 from gomoku.service.game_service import GameService
+
+# Shared with the lobby so UDP discovery can advertise the room code.
+_ANNOUNCE: dict[str, object] = {"code": "", "port": 0}
 
 logger = logging.getLogger(__name__)
 
@@ -404,6 +409,11 @@ def run_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
         logger.info("server stopped")
 
 
+def set_host_room_code(code: str) -> None:
+    """Tell the UDP announcer which room code guests should look for."""
+    _ANNOUNCE["code"] = code.strip().upper().replace(" ", "")
+
+
 def start_embedded_server(
     host: str = "0.0.0.0",
     port: int = DEFAULT_PORT,
@@ -413,6 +423,7 @@ def start_embedded_server(
     The player who clicks「创建房间」owns this process: they are the host,
     and no extra server window is required.
     """
+    allow_inbound(port)
     last_error: OSError | None = None
     for candidate in range(port, port + 16):
         try:
@@ -466,8 +477,34 @@ async def _serve_and_signal(
     sockets = server.sockets or []
     if not sockets:
         raise OSError("server has no bound socket")
-    bound.append(int(sockets[0].getsockname()[1]))
+    bound_port = int(sockets[0].getsockname()[1])
+    bound.append(bound_port)
+    _ANNOUNCE["port"] = bound_port
     logger.info("embedded host listening on %s", sockets[0].getsockname())
+    transport = await _start_announcer(host, bound_port)
     ready.set()
-    async with server:
-        await server.serve_forever()
+    try:
+        async with server:
+            await server.serve_forever()
+    finally:
+        if transport is not None:
+            transport.close()
+
+
+async def _start_announcer(
+    host: str,
+    port: int,
+) -> asyncio.DatagramTransport | None:
+    udp_host = "0.0.0.0" if host in {"0.0.0.0", "", "::"} else host
+    loop = asyncio.get_running_loop()
+    try:
+        transport, _protocol = await loop.create_datagram_endpoint(
+            lambda: AnnounceProtocol(_ANNOUNCE),
+            local_addr=(udp_host, port),
+            allow_broadcast=True,
+        )
+        logger.info("room announcer listening on UDP %s:%s", udp_host, port)
+        return transport
+    except OSError as exc:
+        logger.info("room announcer unavailable: %s", exc)
+        return None

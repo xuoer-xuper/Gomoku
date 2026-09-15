@@ -5,9 +5,19 @@
 
 ## [Unreleased]
 
+暂无。
+
+## [0.2.1] - 2026-09-15
+
+### 修复
+
+- 房间号不再使用 Clash/VPN 的 `198.18.x` 等虚地址，避免另一台电脑 `WinError 10061` 拒绝连接
+- 创建房间时尝试放行 Windows 防火墙；加入失败时改为后台连接并 UDP 再发现房主
+- 大厅不再每帧重绘棋盘，减轻机房电脑卡顿
+
 ### 变更
 
-- 去掉源码启动脚本与旧文档目录，打包产物改放到本地 `releases/`（不入库）
+- 恢复 `docs/` 产品说明、功能模块图、系统架构图与通讯协议
 
 ## [0.2.0] - 2026-09-15
 
@@ -46,7 +56,8 @@
 - 局域网双人联机：一台电脑启动 `gomoku server`，两名玩家启动客户端
 - 产品说明、功能模块图、系统架构图与通讯协议文档
 
-[Unreleased]: https://github.com/xuoer-xuper/Gomoku/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/xuoer-xuper/Gomoku/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/xuoer-xuper/Gomoku/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/xuoer-xuper/Gomoku/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/xuoer-xuper/Gomoku/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/xuoer-xuper/Gomoku/releases/tag/v0.1.0

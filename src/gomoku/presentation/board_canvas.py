@@ -51,11 +51,18 @@ class BoardCanvas(tk.Canvas):
         ghost: Stone | None,
         enabled: bool,
     ) -> None:
+        changed = (
+            self._board is not board
+            or self._last != last_move
+            or self._ghost is not ghost
+            or self._enabled != enabled
+        )
         self._board = board
         self._last = last_move
         self._ghost = ghost
         self._enabled = enabled
-        self.redraw()
+        if changed:
+            self.redraw()
 
     def reset(self) -> None:
         self._board = Board(BOARD_SIZE)
