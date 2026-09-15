@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 from tkinter.scrolledtext import ScrolledText
 
 from gomoku.communication.client import GameClient
-from gomoku.communication.lan import local_ipv4
+from gomoku.communication.discover import discover_host
+from gomoku.communication.lan import (
+    describe_connect_error,
+    is_usable_lan_ipv4,
+    list_local_ipv4,
+    local_ipv4,
+)
 from gomoku.communication.messages import Message, MessageType
 from gomoku.communication.room_code import (
     RoomCodeError,
     decode_endpoint,
     encode_endpoint,
 )
-from gomoku.communication.server import start_embedded_server
+from gomoku.communication.server import (
+    set_host_room_code,
+    start_embedded_server,
+)
 from gomoku.config import BOARD_SIZE, DEFAULT_PORT
 from gomoku.data.board import Board
 from gomoku.data.position import Position
@@ -42,6 +52,8 @@ class GomokuDesktop(tk.Tk):
         self._is_host = False
         self._name = "玩家"
         self._pending: str | None = None
+        self._joining = False
+        self._join_result: tuple[OSError | None, str, int, str] | None = None
         self._build_lobby()
         self._build_game()
         self._show(self._lobby)
@@ -83,12 +95,14 @@ class GomokuDesktop(tk.Tk):
         self._dark_button(card, "加入房间", self._join).pack(fill=tk.X)
         self._lobby_status = tk.Label(
             self._lobby,
-            text="同一 Wi-Fi 即可对战，无需安装、无需云服务器",
+            text="同一机房或同一 Wi-Fi 即可对战，无需安装、无需云服务器",
             font=theme.BODY_FONT,
             fg=theme.MUTED,
             bg=theme.BG,
+            wraplength=400,
+            justify="center",
         )
-        self._lobby_status.pack(pady=8)
+        self._lobby_status.pack(pady=8, padx=24)
 
     def _build_game(self) -> None:
         self._game = tk.Frame(self, bg=theme.BG)
@@ -261,6 +275,7 @@ class GomokuDesktop(tk.Tk):
             port = start_embedded_server("0.0.0.0", DEFAULT_PORT)
             lan_ip = local_ipv4()
             code = encode_endpoint(lan_ip, port)
+            set_host_room_code(code)
             self._connect("127.0.0.1", port, code, is_host=True)
         except (OSError, RuntimeError, RoomCodeError) as exc:
             self._lobby_status.config(text=str(exc), fg=theme.LOSE)
@@ -270,11 +285,60 @@ class GomokuDesktop(tk.Tk):
         if not raw:
             self._lobby_status.config(text="请输入房间号", fg=theme.LOSE)
             return
+        if self._joining:
+            return
         try:
             host, port = decode_endpoint(raw)
-            self._connect(host, port, raw.upper(), is_host=False)
-        except (OSError, RoomCodeError) as exc:
+        except RoomCodeError as exc:
             self._lobby_status.config(text=str(exc), fg=theme.LOSE)
+            return
+        self._joining = True
+        self._lobby_status.config(text="正在加入房间…", fg=theme.MUTED)
+        self._name = self._player_name()
+        thread = threading.Thread(
+            target=self._join_worker,
+            args=(host, port, raw.upper()),
+            name="gomoku-join",
+            daemon=True,
+        )
+        thread.start()
+
+    def _join_worker(self, host: str, port: int, code: str) -> None:
+        error: OSError | None = None
+        try:
+            self._client.connect(host, port, timeout=2.0)
+        except OSError as exc:
+            found = discover_host(code, host, port, timeout=2.0)
+            if found is None:
+                error = exc
+            else:
+                try:
+                    self._client.connect(found[0], found[1], timeout=2.0)
+                except OSError as retry_exc:
+                    error = retry_exc
+        if error is None:
+            try:
+                self._client.join(self._name)
+            except OSError as exc:
+                error = exc
+        self._join_result = (error, host, port, code)
+
+    def _finish_join(
+        self,
+        error: OSError | None,
+        host: str,
+        port: int,
+        code: str,
+    ) -> None:
+        self._joining = False
+        if error is not None:
+            self._client.close()
+            self._lobby_status.config(
+                text=describe_connect_error(error, host, port),
+                fg=theme.LOSE,
+            )
+            return
+        self._enter_game(code, is_host=False)
 
     def _connect(
         self,
@@ -284,24 +348,47 @@ class GomokuDesktop(tk.Tk):
         is_host: bool,
     ) -> None:
         self._name = self._player_name()
-        self._room_code = code
-        self._is_host = is_host
         try:
             self._client.connect(host, port)
             self._client.join(self._name)
         except OSError as exc:
             self._lobby_status.config(
-                text=f"连接失败：{exc}",
+                text=describe_connect_error(exc, host, port),
                 fg=theme.LOSE,
             )
             return
+        self._enter_game(code, is_host=is_host)
+
+    def _enter_game(self, code: str, is_host: bool) -> None:
+        self._room_code = code
+        self._is_host = is_host
         self._connected = True
         self._copy_code()
         self._room_label.config(text=f"房间  {code}")
         self._status_label.config(text="等待对手加入…")
-        self._players_label.config(text=f"你：{self._name}")
+        extras = []
+        if is_host:
+            lan_ip = local_ipv4()
+            extras.append(f"本机 {lan_ip}")
+            if not is_usable_lan_ipv4(lan_ip):
+                extras.append("未检测到局域网 IP，目前只能本机自测")
+            else:
+                others = [
+                    ip for ip in list_local_ipv4() if ip != lan_ip
+                ]
+                if others:
+                    extras.append("其他网卡 " + "、".join(others[:2]))
+        self._players_label.config(
+            text="\n".join([f"你：{self._name}", *extras])
+        )
         self._append_chat("系统", f"房间号 {code} 已复制")
+        if is_host:
+            self._append_chat(
+                "系统",
+                "若对方提示连接失败，请在防火墙弹窗点允许，并关掉代理后再开房间",
+            )
         self._show(self._game)
+        self._refresh_board()
         self.title(f"联机五子棋  {code}")
 
     def _copy_code(self) -> None:
@@ -362,11 +449,14 @@ class GomokuDesktop(tk.Tk):
         self._chat.config(state=tk.DISABLED)
 
     def _pump(self) -> None:
+        result = self._join_result
+        if result is not None:
+            self._join_result = None
+            self._finish_join(*result)
         if self._connected:
             for message in self._client.poll():
                 self._dispatch(message)
-        self._refresh_board()
-        self.after(40, self._pump)
+        self.after(80, self._pump)
 
     def _refresh_board(self) -> None:
         my_turn = (
@@ -425,6 +515,7 @@ class GomokuDesktop(tk.Tk):
             )
         )
         self._append_chat("系统", "对局开始，黑棋先行")
+        self._refresh_board()
 
     def _on_move(self, message: Message) -> None:
         row = int(message.payload["row"])
@@ -443,6 +534,7 @@ class GomokuDesktop(tk.Tk):
                 text="轮到你落子" if mine else "等待对手落子",
                 fg=theme.WIN if mine else theme.MUTED,
             )
+        self._refresh_board()
 
     def _on_invalid(self, message: Message) -> None:
         reason = str(
@@ -465,6 +557,7 @@ class GomokuDesktop(tk.Tk):
                 text, color = "你输了", theme.LOSE
         self._status_label.config(text=f"{text}  ·  可点再战", fg=color)
         self._append_chat("系统", text)
+        self._refresh_board()
 
     def _on_left(self, _message: Message) -> None:
         self._finished = True
@@ -496,6 +589,7 @@ class GomokuDesktop(tk.Tk):
         self._append_chat("系统", "悔棋成功")
         self._pending = None
         self._prompt.pack_forget()
+        self._refresh_board()
 
     def _on_undo_no(self, _message: Message) -> None:
         self._status_label.config(text="对方拒绝悔棋", fg=theme.LOSE)

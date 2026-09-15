@@ -16,6 +16,9 @@ dist/
 .eggs/
 pip-wheel-metadata/
 
+# Local release binaries (do not push)
+releases/
+
 # Virtual environments
 .venv/
 venv/
