@@ -6,7 +6,17 @@ from gomoku.communication.room_code import (
     RoomCodeError,
     decode_endpoint,
     encode_endpoint,
+    generate_room_code,
+    normalize_room_code,
 )
+
+
+def test_random_room_codes_differ() -> None:
+    codes = {generate_room_code() for _ in range(20)}
+    assert len(codes) >= 18
+    for code in codes:
+        assert normalize_room_code(code) == code
+        assert len(code.replace("-", "")) == 6
 
 
 def test_roundtrip_lan_address() -> None:

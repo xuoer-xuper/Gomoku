@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 
-from gomoku.config import DEFAULT_PORT
+from gomoku.config import DEFAULT_PORT, DISCOVERY_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,21 @@ def _allow_inbound_sync(port: int) -> None:
                 "action=allow",
                 "protocol=UDP",
                 f"localport={port}-{end}",
+                "enable=yes",
+                "profile=any",
+            ]
+        )
+        _netsh(
+            [
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                f"name={_RULE_NAME} DISCOVER",
+                "dir=in",
+                "action=allow",
+                "protocol=UDP",
+                f"localport={DISCOVERY_PORT}",
                 "enable=yes",
                 "profile=any",
             ]

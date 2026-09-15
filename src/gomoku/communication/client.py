@@ -93,6 +93,9 @@ class GameClient:
     def reply_rematch(self, accepted: bool) -> None:
         self.send(Message.rematch_reply(accepted))
 
+    def resign(self) -> None:
+        self.send(Message.resign())
+
     def send(self, message: Message) -> None:
         if self._transport is None:
             raise RuntimeError("client is not connected")

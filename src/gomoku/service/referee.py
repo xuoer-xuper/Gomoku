@@ -41,30 +41,46 @@ class Referee:
         last_move: Position,
     ) -> Stone | None:
         """Return the winner if last_move completes a winning line."""
+        line = self.winning_line(board, last_move)
+        if not line:
+            return None
+        return board.get(last_move)
+
+    def winning_line(
+        self,
+        board: Board,
+        last_move: Position,
+    ) -> list[Position]:
+        """Positions of a completed five (or longer), else empty."""
         stone = board.get(last_move)
         if stone is Stone.EMPTY:
-            return None
+            return []
         for delta_row, delta_col in _DIRECTIONS:
-            total = 1
-            total += self._count_ray(
-                board, last_move, stone, delta_row, delta_col
+            cells = [last_move]
+            cells.extend(
+                self._ray_cells(
+                    board, last_move, stone, delta_row, delta_col
+                )
             )
-            total += self._count_ray(
-                board, last_move, stone, -delta_row, -delta_col
+            cells.extend(
+                self._ray_cells(
+                    board, last_move, stone, -delta_row, -delta_col
+                )
             )
-            if total >= self._win_length:
-                return stone
-        return None
+            if len(cells) >= self._win_length:
+                cells.sort(key=lambda item: (item.row, item.col))
+                return cells
+        return []
 
-    def _count_ray(
+    def _ray_cells(
         self,
         board: Board,
         origin: Position,
         stone: Stone,
         delta_row: int,
         delta_col: int,
-    ) -> int:
-        count = 0
+    ) -> list[Position]:
+        cells: list[Position] = []
         row = origin.row + delta_row
         col = origin.col + delta_col
         while True:
@@ -73,7 +89,7 @@ class Referee:
                 break
             if board.get(current) is not stone:
                 break
-            count += 1
+            cells.append(current)
             row += delta_row
             col += delta_col
-        return count
+        return cells

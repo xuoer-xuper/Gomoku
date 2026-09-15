@@ -10,7 +10,7 @@ from gomoku.config import ENCODING
 from gomoku.data.position import Position
 from gomoku.data.stone import Stone
 from gomoku.exceptions import ProtocolError
-from gomoku.service.game_service import MoveResult
+from gomoku.service.game_service import MoveResult, UndoResult
 
 
 class MessageType(str, Enum):
@@ -35,6 +35,8 @@ class MessageType(str, Enum):
     UNDO_REJECTED = "undo_rejected"
     REMATCH_REQUEST = "rematch_request"
     REMATCH_REPLY = "rematch_reply"
+    REMATCH_REJECTED = "rematch_rejected"
+    RESIGN = "resign"
 
 
 class Message:
@@ -96,6 +98,8 @@ class Message:
         your_color: Stone,
         opponent_name: str,
         board_size: int,
+        allow_undo: bool = True,
+        think_seconds: int = 0,
     ) -> Message:
         return cls(
             MessageType.GAME_START,
@@ -103,6 +107,8 @@ class Message:
                 "your_color": your_color.code,
                 "opponent_name": opponent_name,
                 "board_size": board_size,
+                "allow_undo": allow_undo,
+                "think_seconds": think_seconds,
             },
         )
 
@@ -129,7 +135,12 @@ class Message:
     @classmethod
     def game_over(cls, result: MoveResult) -> Message:
         winner = result.winner.code if result.winner else None
-        reason = "draw" if result.is_draw else "five_in_a_row"
+        if result.reason:
+            reason = result.reason
+        elif result.is_draw:
+            reason = "draw"
+        else:
+            reason = "five_in_a_row"
         return cls(
             MessageType.GAME_OVER,
             {
@@ -160,18 +171,30 @@ class Message:
         return cls(MessageType.UNDO_REPLY, {"accepted": accepted})
 
     @classmethod
-    def from_undo(cls, result: MoveResult) -> Message:
+    def from_undo(cls, result: UndoResult) -> Message:
+        removed = [
+            {
+                "row": position.row,
+                "col": position.col,
+                "color": stone.code,
+            }
+            for position, stone in result.removed
+        ]
+        first = result.removed[0]
         return cls(
             MessageType.UNDO,
             {
-                "row": result.position.row,
-                "col": result.position.col,
-                "color": result.stone.code,
-                "next_turn": (
-                    result.next_turn.code if result.next_turn else None
-                ),
+                "removed": removed,
+                "row": first[0].row,
+                "col": first[0].col,
+                "color": first[1].code,
+                "next_turn": result.next_turn.code,
             },
         )
+
+    @classmethod
+    def resign(cls) -> Message:
+        return cls(MessageType.RESIGN, {})
 
     @classmethod
     def undo_rejected(cls) -> Message:
@@ -187,6 +210,10 @@ class Message:
             MessageType.REMATCH_REPLY,
             {"accepted": accepted},
         )
+
+    @classmethod
+    def rematch_rejected(cls) -> Message:
+        return cls(MessageType.REMATCH_REJECTED, {})
 
     @classmethod
     def error(cls, message: str) -> Message:

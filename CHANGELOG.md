@@ -7,6 +7,27 @@
 
 暂无。
 
+## [0.3.0] - 2026-09-15
+
+### 新增
+
+- 大厅 / 战绩 / 对局三页布局，本地保存并查询对战记录
+- 首次打开需设置昵称；创建房间可设置是否悔棋、每手思考时间
+- 随机房间号，局域网 UDP 发现
+- 立体棋子、落子缩放与连五金圈动画
+- 投降；离开进行中的房间判负
+- 终局棋盘中央显示胜负图标，提供离开与再战
+
+### 修复
+
+- 悔棋同意按钮被挤出侧栏点不到
+- 悔棋改为撤回自己上一手（必要时连同对方应手一起撤）
+
+### 变更
+
+- 对局中不能再战，再战需终局且对方同意
+- 大厅创建 / 加入卡片等宽，思考时间改为宽下拉
+
 ## [0.2.1] - 2026-09-15
 
 ### 修复
@@ -56,7 +77,8 @@
 - 局域网双人联机：一台电脑启动 `gomoku server`，两名玩家启动客户端
 - 产品说明、功能模块图、系统架构图与通讯协议文档
 
-[Unreleased]: https://github.com/xuoer-xuper/Gomoku/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/xuoer-xuper/Gomoku/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/xuoer-xuper/Gomoku/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/xuoer-xuper/Gomoku/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/xuoer-xuper/Gomoku/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/xuoer-xuper/Gomoku/compare/v0.1.0...v0.1.1

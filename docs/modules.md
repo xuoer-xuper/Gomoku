@@ -65,6 +65,7 @@ flowchart LR
 | 悔棋与再战 | `GameService.undo_last` / `restart` | 当前快照 | 恢复回合或新棋盘 |
 | 棋盘与快照 | `data/board.py` 等 | 落子 | 占用状态 |
 | 内存存储 | `InMemoryGameStore` | game_id | `GameState` |
+| 对战记录 | `data/records.py` | 终局快照 | 本机 JSON 战绩 |
 
 ## 3. 功能到模块映射
 
@@ -78,4 +79,5 @@ flowchart LR
 | 胜负判断 | 胜负判断、消息 `game_over` |
 | 文字对话 | 侧栏对话、消息 `chat` |
 | 悔棋 / 再战 | 悔棋与再战、请求-应答消息 |
+| 对战记录 | 对战记录、战绩页筛选与棋谱 |
 | 防火墙与跨机加入 | 局域网地址过滤、防火墙放行、UDP 发现 |

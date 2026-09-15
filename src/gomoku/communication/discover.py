@@ -1,4 +1,4 @@
-"""UDP room announcement so guests can find the host if the room code IP is wrong."""
+"""UDP room announcement using a random room code."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import time
 from typing import Any
 
 from gomoku.communication.lan import list_local_ipv4, subnet_broadcast
+from gomoku.communication.room_code import normalize_room_code
+from gomoku.config import DISCOVERY_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +35,7 @@ class AnnounceProtocol(asyncio.DatagramProtocol):
             return
         text = data.decode("utf-8", "ignore").strip()
         expected = f"{_DISCOVER} {code}"
-        if text != expected and text != _DISCOVER:
-            return
-        if text == _DISCOVER:
-            # Ignore unscoped probes so two rooms in one lab do not collide.
+        if text != expected:
             return
         reply = f"{_HOST} {code} {port}".encode("utf-8")
         try:
@@ -51,12 +50,12 @@ def set_announce_code(state: dict[str, Any], code: str) -> None:
 
 def discover_host(
     room_code: str,
-    hint_ip: str,
-    port: int,
-    timeout: float = 2.0,
+    hint_ip: str = "",
+    port: int = DISCOVERY_PORT,
+    timeout: float = 2.5,
 ) -> tuple[str, int] | None:
-    """Ask the LAN who owns ``room_code``. Return ``(ip, port)`` or None."""
-    compact = room_code.strip().upper().replace(" ", "")
+    """Ask the LAN who owns ``room_code``. Return ``(ip, tcp_port)``."""
+    compact = normalize_room_code(room_code)
     payload = f"{_DISCOVER} {compact}".encode("utf-8")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -76,31 +75,25 @@ def discover_host(
                 continue
             except OSError:
                 continue
-            parsed = _parse_reply(data, compact, port)
+            parsed = _parse_reply(data, compact)
             if parsed is not None:
-                ip, found_port = parsed
-                return addr[0] or ip, found_port
+                _ip, found_port = parsed
+                return addr[0], found_port
         return None
     finally:
         sock.close()
 
 
-def _parse_reply(
-    data: bytes,
-    code: str,
-    fallback_port: int,
-) -> tuple[str, int] | None:
+def _parse_reply(data: bytes, code: str) -> tuple[str, int] | None:
     text = data.decode("utf-8", "ignore").strip().split()
-    if len(text) < 2 or text[0] != _HOST:
+    if len(text) < 3 or text[0] != _HOST:
         return None
-    if text[1].upper() != code:
+    if text[1].upper() != code.upper():
         return None
-    found_port = fallback_port
-    if len(text) >= 3:
-        try:
-            found_port = int(text[2])
-        except ValueError:
-            return None
+    try:
+        found_port = int(text[2])
+    except ValueError:
+        return None
     return "0.0.0.0", found_port
 
 
@@ -115,7 +108,9 @@ def _probe_targets(hint_ip: str, port: int) -> list[tuple[str, int]]:
             targets.append(item)
 
     add(hint_ip)
+    add("127.0.0.1")
     add("255.255.255.255")
     for ip in list_local_ipv4():
         add(subnet_broadcast(ip))
+        add(ip)
     return targets
