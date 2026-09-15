@@ -58,18 +58,17 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging()
     args = build_parser().parse_args(argv)
     if args.command is None:
-        from gomoku.presentation.lobby import run_lobby
+        from gomoku.presentation.desktop import run_app
 
-        return run_lobby()
+        return run_app()
     if args.command == "server":
         from gomoku.communication.server import run_server
 
         run_server(args.host, args.port)
         return 0
-    from gomoku.presentation.app import run_client
+    from gomoku.presentation.desktop import run_direct_client
 
-    run_client(args.host, args.port, args.name)
-    return 0
+    return run_direct_client(args.host, args.port, args.name)
 
 
 if __name__ == "__main__":

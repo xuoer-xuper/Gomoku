@@ -1,6 +1,5 @@
-"""Presentation layer: lobby, Pygame board, HUD and input handling."""
+"""Presentation layer: single-window desktop UI."""
 
-from gomoku.presentation.app import GameApp, run_client
-from gomoku.presentation.lobby import run_lobby
+from gomoku.presentation.desktop import run_app
 
-__all__ = ["GameApp", "run_client", "run_lobby"]
+__all__ = ["run_app"]
