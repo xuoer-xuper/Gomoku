@@ -6,22 +6,24 @@
 
 ## 你可以直接这样用
 
-### 方式一：源码启动
+### 方式一：下载 exe
+
+到 [Releases](https://github.com/xuoer-xuper/Gomoku/releases) 下载 `Gomoku.exe`，双击即可。朋友那边同样只要这一个文件，无需安装 Python。
+
+### 方式二：源码启动
 
 ```bash
 pip install -e .
 python -m gomoku
 ```
 
-Windows 也可双击 `start.bat`。
-
-### 方式二：无需安装的 exe
+### 方式三：自己打包 exe
 
 ```bash
 build_exe.bat
 ```
 
-把生成的 `dist\Gomoku.exe` 拷到任意电脑，双击即可。朋友那边同样只要这一个 exe。
+脚本会生成 `dist\Gomoku.exe`，并复制一份到 `releases\Gomoku-<版本>.exe`（该目录已加入 `.gitignore`，不会推送到仓库）。
 
 1. 填写昵称
 2. 一方点 **创建房间**（房间号自动复制）
